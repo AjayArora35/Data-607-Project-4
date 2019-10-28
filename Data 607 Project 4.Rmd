@@ -1,0 +1,233 @@
+---
+title: "Data 607 Project 4"
+author: "Ajay Arora"
+date: "October 19, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#install.packages('tm')
+#install.packages('wordcloud')
+#install.packages('e1071')
+#install.packages('gmodels')
+#install.packages('SnowballC')
+```
+
+```{r}
+library("tm")  #clean and organize data
+library(kableExtra)
+library("SnowballC") #clean and organize data
+library("stringr")
+library("wordcloud") #display more frequent words
+library("gmodels")
+library("e1071") #Naive Bayes Classifier
+library("tidyr")
+library("DT")
+library("ggplot2")
+
+```
+
+#Reference
+
+https://books.google.com/books?id=iNuSDwAAQBAJ&pg=PA105&lpg=PA105&dq=The+dataset+includes+5,559+SMS+messages&source=bl&ots=O78QtjeFTZ&sig=ACfU3U1SNjfr88ZNOaWmcReypuKGWxqupg&hl=en&sa=X&ved=2ahUKEwi95on41KjlAhVig-AKHQZQAlMQ6AEwAHoECAkQAQ#v=onepage&q=The%20dataset%20includes%205%2C559%20SMS%20messages&f=false
+
+https://towardsdatascience.com/naive-bayes-explained-9d2b96f4a9c0
+
+https://www.analyticsvidhya.com/blog/2017/09/naive-bayes-explained/
+
+http://blog.aylien.com/naive-bayes-for-dummies-a-simple-explanation/
+
+
+#Naive Bayes Explained
+
+It is a classification technique based on Bayes' Theorem with an assumption of independence among predictors. In simple terms, a Naive Bayes classifier assumes that the presence of a particular feature in a class is unrelated to the presence of any other feature.
+
+A simple example best explains the application of Naive Bayes for classification. When writing this blog I came across many examples of Naive Bayes in action. Some were too complicated, some dealt with more than Naive Bayes and used other related algorithms, but we found a really simple example on StackOverflow which we'll run through in this blog. It explains the concept really well and runs through the simple maths behind it without getting too technical.
+So, let's say we have data on 1000 pieces of fruit. The fruit being a Banana, Orange or some Other fruit and imagine we know 3 features of each fruit, whether it's long or not, sweet or not and yellow or not, as displayed in the table below:
+
+So from the table what do we already know?
+50% of the fruits are bananas
+30% are oranges
+20% are other fruits
+Based on our training set we can also say the following:
+From 500 bananas 400 (0.8) are Long, 350 (0.7) are Sweet and 450 (0.9) are Yellow
+Out of 300 oranges 0 are Long, 150 (0.5) are Sweet and 300 (1) are Yellow
+From the remaining 200 fruits, 100 (0.5) are Long, 150 (0.75) are Sweet and 50 (0.25) are Yellow
+Which should provide enough evidence to predict the class of another fruit as it's introduced.
+So let's say we're given the features of a piece of fruit and we need to predict the class. If we're told that the additional fruit is Long, Sweet and Yellow, we can classify it using the following formula and subbing in the values for each outcome, whether it's a Banana, an Orange or Other Fruit. The one with the highest probability (score) being the winner.
+Banana:
+ P(Banana|Long,Sweet,Yellow)=fracP(Long|Banana)cdotP(Sweet|Banana)cdotP(Yellow|Banana)cdotP(Banana)P(Long)cdotP(Sweet)cdotP(Yellow)
+ =frac0.8times0.7times0.9times0.5P(evidence)
+ =frac0.252P(evidence)
+Orange:
+ P(Orange|Long,Sweet,Yellow)=0
+Other Fruit:
+ P(Other|Long,Sweet,Yellow)=fracP(Long|Other)cdotP(Sweet|Other)cdotP(Yellow|Other)cdotP(Other)P(Long)cdotP(Sweet)cdotP(Yellow)
+ =frac0.5times0.75times0.25times0.2P(evidence)
+ =frac0.01875P(evidence)
+In this case, based on the higher score (0.01875 lt 0.252) we can assume this Long, Sweet and Yellow fruit is, in fact, a Banana.
+Now that we've seen a basic example of Naive Bayes in action, you can easily see how it can be applied to Text Classification problems such as spam detection, sentiment analysis and categorization. By looking at documents as a set of words, which would represent features, and labels (e.g. "spam" and "ham" in case of spam detection) as classes we can start to classify documents and text automatically. You can read more about Text Classification in our Text Analysis 101 Series.
+
+
+##Strength
+
+Even though the naive assumption is rarely true, the algorithm performs surprisingly good in many cases
+Handles high dimensional data well. Easy to parallelize and handles big data well
+Performs better than more complicated models when the data set is small
+
+##Weakness
+
+The estimated probability is often inaccurate because of the naive assumption. Not ideal for regression use or probability estimation
+When data is abundant, other more complicated models tend to outperform Naive Bayes
+
+
+#Data
+
+##The data is located at: https://www.kaggle.com/hdza1991/sms-spam
+
+###Sample Data
+```{r}
+data <- read.csv(file="https://raw.githubusercontent.com/AjayArora35/Data-607-Project-4/master/sms_spam.csv", header=TRUE)
+head(data) %>% kable() %>%  kable_styling()
+
+```
+###How many of spam and ham?
+```{r}
+ham <- length(which(data$type == "ham"))
+spam <- length(which(data$type == "spam"))
+
+all <- data.frame("ham" = c(ham), "spam" = c(spam))
+
+
+all %>% kable() %>%  kable_styling()
+```
+
+###Separate out spam and ham messages
+```{r}
+spam_messages <- subset(data, data$type == "spam")
+ham_messages <- subset(data, data$type == "ham")
+
+head(spam_messages$text)
+head(ham_messages$text)
+
+```
+
+###Visually, let's take look at the "cleaned" original data
+```{r}
+#Clean the data before representing as a visual. E.g. 'â£ 1000'
+words <- Corpus(VectorSource(spam_messages$text))
+
+words <- tm_map(words, stripWhitespace)
+words <- tm_map(words, content_transformer(tolower))
+words <- tm_map(words, removeNumbers)
+words <- tm_map(words, removePunctuation)
+words <- tm_map(words, removeWords, stopwords("english"))
+words <- tm_map(words, stemDocument)
+
+wordcloud(words, max.words = 100, random.order=FALSE, rot.per=0.30, 
+          colors=brewer.pal(7, "Dark2"))
+
+words1 <- Corpus(VectorSource(ham_messages$text))
+
+words1 <- tm_map(words1, stripWhitespace)
+words1 <- tm_map(words1, content_transformer(tolower))
+words1 <- tm_map(words1, removeNumbers)
+words1 <- tm_map(words1, removePunctuation)
+words1 <- tm_map(words1, removeWords, stopwords("english"))
+words1 <- tm_map(words1, stemDocument)
+
+wordcloud(words1, max.words = 100, random.order=FALSE, rot.per=0.30, 
+          colors=brewer.pal(7, "Dark2"), scale = c(3,0.5))
+```
+
+###Data Preparation
+
+```{r}
+#converting the messages into a collection of text documents known as a "corpus"
+#Create "document term matrix" in which rows indicate each message and the columns indicate each word. 
+#Words are converted to lower case, numbers and punctuation are removed. Stemming is also perfomed. This removes the suffix from words, making it easier for analysis as it #combines words with similar meanings. 'Calling', 'Calls', 'Called', for example, would be converted to 'Call'.
+corpus <- VCorpus(VectorSource(data$text)) 
+dtm <- DocumentTermMatrix(corpus, control = list(
+  tolower = TRUE,
+  removeNumbers = TRUE,
+  removePunctuation = TRUE,
+  stemming = TRUE,
+  removeWords, stopwords("english"),
+  stripWhitespace = TRUE,
+  asPlain = TRUE
+))
+
+```
+###Create subsets of training and testing data
+```{r}
+#Conventionally, 75-80% of data is set aside for training the model and 20-25% is used to the test the model. 
+
+spam_train_set <- data[1:4000,]$type
+spam_test_set <-  data[4001:5559,]$type
+
+length(spam_train_set)
+length(spam_test_set)
+```
+
+###Create additional DTM variables to hold data from dtm.  Naive Bayes uses categorical data and we need to change the DocumentTermMatrix (DTM) from using 1 and 0s to 'yes' and 'no's.  
+```{r}
+
+dtmTrain <- dtm[1:4000,]
+dtmTest <- dtm[4001:5559,]
+
+#Create frequencies of words 
+freqWords <- findFreqTerms(dtmTrain,0)
+freqTrain <- dtmTrain[,freqWords]
+freqTest <- dtmTest[,freqWords]
+
+
+convert_counts <- function(x) {
+  x <- ifelse(x > 0, "Yes", "No")
+}
+train <- apply(freqTrain, MARGIN = 2, convert_counts)
+test <- apply(freqTest, MARGIN = 2,convert_counts)
+
+```
+
+###Train and Test
+```{r}
+#Now, we train the classifier on the training set that was set aside.
+classifier <- naiveBayes(train, spam_train_set)
+#classifier[2]$tables$call
+
+```
+
+###Prediction
+```{r}
+#Using the training data, we now test it to see how well it performed.
+testPredict <- predict(classifier, test)
+CrossTable(testPredict, spam_test_set,
+           prop.chisq = FALSE, prop.t = FALSE,
+           dnn = c('predicted', 'actual'))
+
+```
+ 
+###Naive Bayes Conclusions
+The performance is:  10+23/1559 = .02 = 2%. This indicates that 2% of messages were misclassified as spam.  This is probably attributed to the fact we are not removing least frequently used words (freqWords <- findFreqTerms(dtmTrain,0)). Let's see how this sample data does with SVM classifiers.
+
+
+```{r}
+#SVM
+#https://www.svm-tutorial.com/2014/11/svm-classify-text-r/
+library(caret)
+
+svmclassify <- svm(spam_train_set ~ text , data = train )
+
+svmresult <- predict(svmclassify, na.omit(test))
+
+CrossTable(svmresult, spam_test_set,
+           prop.chisq = FALSE, prop.t = FALSE,
+           dnn = c('predicted', 'actual'))
+```
+###SVM Conclusions 
+Classifying the same data from Naive Bayes using SVM resulted in the following output.  The performance is: 175+25/1559 = 0.12 = 12.8% of messages were misclassified as spam.  SVM did not perform better than Naive Bayes in this test using the same data set.  
+
